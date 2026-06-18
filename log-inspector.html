@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Log Inspector</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800&display=swap');
+    :root { --bg: #050816; --panel: rgba(15,23,42,0.78); --border: rgba(148,163,184,0.18); --accent: #38bdf8; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: radial-gradient(circle at top left, rgba(56,189,248,0.16), transparent 34%), radial-gradient(circle at top right, rgba(139,92,246,0.14), transparent 32%), linear-gradient(135deg,#020617 0%,#0f172a 55%,#020617 100%);
+      color: #e5e7eb; min-height: 100vh;
+    }
+    .code-font { font-family: 'Fira Code', monospace; }
+    .glass { background: var(--panel); border:1px solid var(--border); backdrop-filter:blur(18px); box-shadow:0 20px 45px rgba(0,0,0,0.25); }
+    .btn-soft { background:rgba(30,41,59,.92); border:1px solid rgba(148,163,184,.18); transition:all .2s ease; }
+    .btn-soft:hover { background:rgba(51,65,85,.95); }
+    .log-line { transition:all .1s ease; border-left:3px solid transparent; }
+    .log-line:hover { background:rgba(30,41,59,0.8); }
+    .log-error { border-left-color:#ef4444; }
+    .log-warn { border-left-color:#f59e0b; }
+    .log-info { border-left-color:#38bdf8; }
+    .stat-card { transition:all .2s ease; }
+    .stat-card:hover { transform:translateY(-2px); }
+    .toast { transform:translateY(120px); opacity:0; transition:all .3s ease; }
+    .toast.show { transform:translateY(0); opacity:1; }
+    .custom-scroll::-webkit-scrollbar { width:7px; }
+    .custom-scroll::-webkit-scrollbar-track { background:#020617; }
+    .custom-scroll::-webkit-scrollbar-thumb { background:#334155; border-radius:999px; }
+  </style>
+</head>
+<body>
+  <main class="max-w-7xl mx-auto px-4 py-6 md:py-10">
+    <header class="mb-8">
+      <div class="glass rounded-3xl p-6 md:p-8">
+        <p class="text-yellow-400 font-semibold mb-2"><i class="fa-solid fa-magnifying-glass-chart mr-2"></i>Log Inspector</p>
+        <h1 class="text-3xl md:text-5xl font-extrabold tracking-tight">Analitzador de fitxers de log</h1>
+        <p class="text-slate-400 mt-3">Enganxa un log d'Apache, Nginx, syslog o text genèric i obté estadístiques, errors i patrons.</p>
+      </div>
+    </header>
+
+    <section class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+      <section class="xl:col-span-7 space-y-6">
+        <div class="glass rounded-3xl p-5">
+          <h2 class="text-lg font-bold mb-4"><i class="fa-solid fa-file-lines text-sky-400 mr-2"></i>Log d'entrada</h2>
+          <textarea id="logInput" rows="12" class="w-full rounded-xl p-4 code-font text-sm bg-slate-900/80 border border-slate-700 text-slate-200 resize-y custom-scroll" placeholder="Enganxa aquí el contingut del log..."></textarea>
+          <div class="flex flex-wrap gap-3 mt-4">
+            <button onclick="analyzeSample('apache')" class="btn-soft px-4 py-2.5 rounded-xl text-sm"><i class="fa-brands fa-ubuntu mr-1"></i> Log Apache</button>
+            <button onclick="analyzeSample('nginx')" class="btn-soft px-4 py-2.5 rounded-xl text-sm"><i class="fa-brands fa-nginx mr-1"></i> Log Nginx</button>
+            <button onclick="analyzeSample('syslog')" class="btn-soft px-4 py-2.5 rounded-xl text-sm"><i class="fa-solid fa-terminal mr-1"></i> Syslog</button>
+            <button onclick="analyze()" class="px-5 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-sky-500 to-violet-600 hover:brightness-110 transition"><i class="fa-solid fa-chart-simple mr-1"></i> Analitzar</button>
+            <button onclick="clearLog()" class="btn-soft px-4 py-2.5 rounded-xl text-sm"><i class="fa-solid fa-trash mr-1"></i> Netejar</button>
+          </div>
+        </div>
+
+        <div class="glass rounded-3xl p-5">
+          <h2 class="text-lg font-bold mb-4"><i class="fa-solid fa-table-list text-sky-400 mr-2"></i>Línies del log</h2>
+          <div id="logLines" class="space-y-1 max-h-72 overflow-y-auto custom-scroll">
+            <p class="text-sm text-slate-500">Esperant dades...</p>
+          </div>
+        </div>
+      </section>
+
+      <aside class="xl:col-span-5 space-y-6">
+        <div class="glass rounded-3xl p-5">
+          <h2 class="text-lg font-bold mb-4"><i class="fa-solid fa-chart-pie text-sky-400 mr-2"></i>Estadístiques</h2>
+          <div id="statsGrid" class="grid grid-cols-2 gap-3">
+            <div class="stat-card bg-slate-900/60 rounded-2xl p-4 text-center">
+              <p class="text-2xl font-bold text-sky-300" id="statTotal">0</p>
+              <p class="text-xs text-slate-400">Línies totals</p>
+            </div>
+            <div class="stat-card bg-slate-900/60 rounded-2xl p-4 text-center">
+              <p class="text-2xl font-bold text-red-400" id="statErrors">0</p>
+              <p class="text-xs text-slate-400">Errors</p>
+            </div>
+            <div class="stat-card bg-slate-900/60 rounded-2xl p-4 text-center">
+              <p class="text-2xl font-bold text-yellow-400" id="statWarns">0</p>
+              <p class="text-xs text-slate-400">Warnings</p>
+            </div>
+            <div class="stat-card bg-slate-900/60 rounded-2xl p-4 text-center">
+              <p class="text-2xl font-bold text-green-400" id="statOk">0</p>
+              <p class="text-xs text-slate-400">OK / Info</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass rounded-3xl p-5">
+          <h2 class="text-lg font-bold mb-4"><i class="fa-solid fa-address-card text-sky-400 mr-2"></i>IPs recurrents</h2>
+          <div id="topIps" class="space-y-1 max-h-48 overflow-y-auto custom-scroll">
+            <p class="text-sm text-slate-500">Sense dades.</p>
+          </div>
+        </div>
+
+        <div class="glass rounded-3xl p-5">
+          <h2 class="text-lg font-bold mb-4"><i class="fa-solid fa-globe text-sky-400 mr-2"></i>Codi HTTP</h2>
+          <div id="httpCodes" class="space-y-1 max-h-48 overflow-y-auto custom-scroll">
+            <p class="text-sm text-slate-500">Sense dades.</p>
+          </div>
+        </div>
+      </aside>
+    </section>
+    <footer class="text-center text-slate-500 text-sm mt-10">Desenvolupat per Sergi Gallart &middot; Log Inspector</footer>
+  </main>
+  <div id="toast" class="toast fixed bottom-6 right-6 bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 z-50">
+    <i class="fa-solid fa-check-circle"></i><span id="toastText">Fet</span>
+  </div>
+
+  <script>
+    const samples = {
+      apache: `192.168.1.10 - - [10/Jun/2026:08:12:34 +0200] "GET /index.html HTTP/1.1" 200 1234 "-" "Mozilla/5.0"
+192.168.1.11 - - [10/Jun/2026:08:12:35 +0200] "POST /login.php HTTP/1.1" 302 0 "-" "Mozilla/5.0"
+192.168.1.10 - - [10/Jun/2026:08:13:01 +0200] "GET /dashboard HTTP/1.1" 200 5678 "-" "Mozilla/5.0"
+10.0.0.5 - - [10/Jun/2026:08:14:22 +0200] "GET /admin HTTP/1.1" 404 256 "-" "curl/7.68"
+192.168.1.11 - - [10/Jun/2026:08:15:00 +0200] "POST /api/data HTTP/1.1" 500 89 "-" "Python-requests/2.28"
+10.0.0.5 - - [10/Jun/2026:08:16:10 +0200] "GET /wp-admin HTTP/1.1" 403 128 "-" "curl/7.68"
+192.168.1.10 - - [10/Jun/2026:08:17:45 +0200] "GET /images/logo.png HTTP/1.1" 304 0 "-" "Mozilla/5.0"
+10.0.0.5 - - [10/Jun/2026:08:18:00 +0200] "POST /xmlrpc.php HTTP/1.1" 403 64 "-" "curl/7.68"
+192.168.1.12 - - [10/Jun/2026:08:19:30 +0200] "GET /index.html HTTP/1.1" 200 1234 "-" "Mozilla/5.0"
+10.0.0.5 - - [10/Jun/2026:08:20:01 +0200] "GET /backup.sql HTTP/1.1" 404 128 "-" "curl/7.68"`,
+      nginx: `203.0.113.1 - - [10/Jun/2026:09:00:01 +0200] "GET / HTTP/1.1" 200 3456 "-" "Mozilla/5.0"
+203.0.113.2 - - [10/Jun/2026:09:00:05 +0200] "GET /api/users HTTP/1.1" 200 789 "-" "PostmanRuntime/7.32"
+198.51.100.1 - - [10/Jun/2026:09:01:22 +0200] "POST /api/login HTTP/1.1" 401 45 "-" "Python-urllib/3.11"
+203.0.113.1 - - [10/Jun/2026:09:02:10 +0200] "GET /css/style.css HTTP/1.1" 304 0 "-" "Mozilla/5.0"
+198.51.100.1 - - [10/Jun/2026:09:03:00 +0200] "POST /api/login HTTP/1.1" 200 234 "-" "Python-urllib/3.11"
+198.51.100.1 - - [10/Jun/2026:09:03:05 +0200] "GET /api/admin HTTP/1.1" 403 30 "-" "Python-urllib/3.11"
+203.0.113.2 - - [10/Jun/2026:09:04:12 +0200] "PUT /api/users/1 HTTP/1.1" 200 56 "-" "PostmanRuntime/7.32"
+198.51.100.2 - - [10/Jun/2026:09:05:00 +0200] "GET / HTTP/1.1" 200 3456 "-" "Mozilla/5.0"
+203.0.113.1 - - [10/Jun/2026:09:06:30 +0200] "GET /js/app.js HTTP/1.1" 200 12890 "-" "Mozilla/5.0"
+198.51.100.1 - - [10/Jun/2026:09:07:00 +0200] "GET /wp-admin HTTP/1.1" 404 128 "-" "Python-urllib/3.11"`,
+      syslog: `Jun 10 08:15:01 web-server CRON[1234]: pam_unix(cron:session): session opened for user root by (uid=0)
+Jun 10 08:15:01 web-server CRON[1234]: pam_unix(cron:session): session closed for user root
+Jun 10 08:17:30 web-server sshd[2345]: Accepted public key for admin from 192.168.1.10 port 52134 ssh2: RSA SHA256:abc123
+Jun 10 08:18:22 web-server sshd[2346]: Failed password for root from 10.0.0.5 port 63214 ssh2
+Jun 10 08:18:22 web-server sshd[2346]: Failed password for root from 10.0.0.5 port 63215 ssh2
+Jun 10 08:18:25 web-server sshd[2346]: Failed password for root from 10.0.0.5 port 63216 ssh2
+Jun 10 08:18:30 web-server sshd[2346]: Connection closed by authenticating user root 10.0.0.5 port 63216 [preauth]
+Jun 10 08:20:00 web-server kernel: [12345.678901] eth0: link up, 1000Mbps, full-duplex
+Jun 10 08:25:00 web-server systemd[1]: Starting nginx.service - Nginx Web Server...
+Jun 10 08:25:01 web-server systemd[1]: Started nginx.service - Nginx Web Server.`
+    };
+
+    function analyzeSample(type) {
+      document.getElementById('logInput').value = samples[type] || '';
+      analyze();
+      showToast(`Log de mostra carregat: ${type}`);
+    }
+
+    function analyze() {
+      const text = document.getElementById('logInput').value;
+      if (!text.trim()) { showToast('No hi ha dades per analitzar'); return; }
+
+      const lines = text.split('\n').filter(l => l.trim());
+      document.getElementById('statTotal').textContent = lines.length;
+
+      let errors = 0, warns = 0, info = 0;
+      const ipMap = {};
+      const httpMap = {};
+      let linesHtml = '';
+
+      lines.forEach((line, i) => {
+        let cls = 'log-info';
+        const lower = line.toLowerCase();
+        if (lower.includes('error') || lower.includes('failed') || lower.includes(' 500 ') || lower.includes(' 404 ') || lower.includes(' 403 ') || lower.includes(' 401 ')) {
+          cls = 'log-error'; errors++;
+        } else if (lower.includes('warn') || lower.includes(' 304 ')) {
+          cls = 'log-warn'; warns++;
+        } else {
+          info++;
+        }
+
+        const ipMatch = line.match(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/);
+        if (ipMatch) {
+          ipMap[ipMatch[1]] = (ipMap[ipMatch[1]] || 0) + 1;
+        }
+
+        const httpMatch = line.match(/"\w+\s+\S+\s+\S+"\s+(\d{3})/);
+        if (httpMatch) {
+          httpMap[httpMatch[1]] = (httpMap[httpMatch[1]] || 0) + 1;
+        }
+
+        linesHtml += `<div class="log-line ${cls} px-3 py-1.5 rounded-lg text-xs code-font">
+          <span class="text-slate-600 mr-2">${i+1}</span>
+          <span class="text-slate-300">${line.length > 120 ? line.slice(0,120)+'...' : line}</span>
+        </div>`;
+      });
+
+      document.getElementById('statErrors').textContent = errors;
+      document.getElementById('statWarns').textContent = warns;
+      document.getElementById('statOk').textContent = info;
+      document.getElementById('logLines').innerHTML = linesHtml;
+
+      const sortedIps = Object.entries(ipMap).sort((a,b) => b[1] - a[1]).slice(0,10);
+      document.getElementById('topIps').innerHTML = sortedIps.length
+        ? sortedIps.map(([ip, count]) => `<div class="flex justify-between items-center py-1.5 px-2 rounded-lg bg-slate-900/40">
+            <span class="code-font text-xs text-slate-300">${ip}</span>
+            <span class="text-xs font-bold text-sky-300">${count}</span>
+          </div>`).join('')
+        : '<p class="text-sm text-slate-500">Sense IPs detectades.</p>';
+
+      const sortedHttp = Object.entries(httpMap).sort((a,b) => b[1] - a[1]);
+      document.getElementById('httpCodes').innerHTML = sortedHttp.length
+        ? sortedHttp.map(([code, count]) => {
+            const color = code.startsWith('2') ? 'text-green-400' : code.startsWith('3') ? 'text-yellow-400' : code.startsWith('4') ? 'text-orange-400' : 'text-red-400';
+            return `<div class="flex justify-between items-center py-1.5 px-2 rounded-lg bg-slate-900/40">
+              <span class="code-font text-xs ${color}">${code}</span>
+              <span class="text-xs font-bold text-sky-300">${count}</span>
+            </div>`;
+          }).join('')
+        : '<p class="text-sm text-slate-500">Sense codis HTTP detectats.</p>';
+
+      showToast(`Anàlisi complet: ${errors} errors, ${warns} warnings`);
+    }
+
+    function clearLog() {
+      document.getElementById('logInput').value = '';
+      document.getElementById('statTotal').textContent = '0';
+      document.getElementById('statErrors').textContent = '0';
+      document.getElementById('statWarns').textContent = '0';
+      document.getElementById('statOk').textContent = '0';
+      document.getElementById('logLines').innerHTML = '<p class="text-sm text-slate-500">Esperant dades...</p>';
+      document.getElementById('topIps').innerHTML = '<p class="text-sm text-slate-500">Sense dades.</p>';
+      document.getElementById('httpCodes').innerHTML = '<p class="text-sm text-slate-500">Sense dades.</p>';
+      showToast('Log netejat');
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      document.getElementById('toastText').textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2400);
+    }
+  </script>
+</body>
+</html>
